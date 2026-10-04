@@ -1,476 +1,702 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Starlink Sonifier (Mobile)</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
-    <style>
-        body {
-            margin: 0;
-            background-color: #050510;
-            color: #00ffcc;
-            font-family: 'Courier New', Courier, monospace;
-            overflow: hidden;
-            touch-action: none;
-            -webkit-user-select: none;
-            user-select: none;
-        }
-        
-        #ui {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; 
-            z-index: 20;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: rgba(5, 5, 16, 0.8); /* Lekkie przyciemnienie tła */
-            transition: opacity 0.5s;
-        }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Drugi mózg w AR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ink: rgba(16, 24, 44, 0.82);
+    --ink-solid: #10182c;
+    --paper: #f5f3ee;
+    --muted: #aab3c5;
+    --amber: #ffb347;
+    --line: rgba(245, 243, 238, 0.16);
+    --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: var(--font); color: var(--paper); -webkit-tap-highlight-color: transparent; }
+  #graph { position: fixed; inset: 0; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
-        #info-panel {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.5);
-            padding: 8px;
-            border-radius: 4px;
-            pointer-events: none;
-            z-index: 10;
-        }
-        #status {
-            font-size: 12px;
-            color: #aaa;
-            margin-top: 4px;
-        }
-        #info {
-            font-size: 14px;
-            font-weight: bold;
-            color: #fff;
-        }
+  /* HUD warstwy nad kamerą: nie łapią dotyku poza panelami, żeby tap trafiał w scenę */
+  .hud { position: fixed; inset: 0; pointer-events: none; z-index: 10;
+         padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+  .hud > * { pointer-events: auto; }
+  .hud > .top { pointer-events: none; }
+  .top > .status, .top > .chip-btn { pointer-events: auto; }
 
-        #startBtn {
-            pointer-events: auto;
-            background: rgba(0, 255, 204, 0.9);
-            color: black;
-            border: 2px solid #fff;
-            padding: 30px 50px;
-            font-size: 24px;
-            font-weight: 900;
-            cursor: pointer;
-            border-radius: 50px;
-            box-shadow: 0 0 30px rgba(0, 255, 204, 0.6);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            transition: all 0.2s;
-            -webkit-tap-highlight-color: transparent;
-        }
-        #startBtn:active {
-            transform: scale(0.95);
-            background: #fff;
-            box-shadow: 0 0 50px rgba(0, 255, 204, 1);
-        }
+  /* Pasek górny */
+  .top { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px;
+         display: flex; gap: 8px; align-items: center; }
+  .status { display: flex; align-items: center; gap: 8px; background: var(--ink); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            padding: 8px 12px; border-radius: 999px; font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #e05d5d; box-shadow: 0 0 0 3px rgba(224,93,93,.25); transition: background .2s; }
+  .status.found .dot { background: #5fd38d; box-shadow: 0 0 0 3px rgba(95,211,141,.25); }
+  .spacer { flex: 1; }
+  .chip-btn { background: var(--ink); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid var(--line);
+              padding: 8px 14px; border-radius: 999px; font-size: 14px; }
+  .chip-btn[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
 
-        /* Pasek postępu */
-        #loader-container {
-            display: none; /* Domyślnie ukryty */
-            width: 70%;
-            max-width: 300px;
-            height: 6px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid #00ffcc;
-            border-radius: 4px;
-            margin-top: 30px;
-            overflow: hidden;
-            box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
-        }
-        #loader-bar {
-            width: 0%;
-            height: 100%;
-            background: #00ffcc;
-            box-shadow: 0 0 10px #00ffcc;
-            transition: width 0.1s linear;
-        }
-        #loader-text {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #00ffcc;
-            display: none;
-        }
+  /* Celownik: środek ekranu to promień wyboru */
+  .reticle { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; pointer-events: none;
+             border: 2px solid rgba(245,243,238,.85); border-radius: 50%; transition: transform .15s, border-color .15s; }
+  .reticle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--paper); }
+  .reticle.on { border-color: var(--amber); transform: scale(1.25); }
+  .aim-label { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); pointer-events: none;
+               background: var(--ink); padding: 6px 12px; border-radius: 8px; font-size: 15px; font-weight: 500; white-space: nowrap;
+               max-width: 80vw; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .12s; }
+  .aim-label.on { opacity: 1; }
+  .aim-label small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
 
-        canvas {
-            display: block;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-        }
-    </style>
+  /* Podpowiedź startowa */
+  .hint { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+          width: min(440px, calc(100% - 24px)); background: var(--ink); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+          border-radius: 16px; padding: 14px 16px; font-size: 14px; line-height: 1.5; }
+  .hint p { margin: 0; }
+  .hint p + p { margin-top: 6px; color: var(--muted); }
+
+  /* Panel notatki (fokus) */
+  .sheet { position: absolute; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+           max-width: 460px; margin: 0 auto; max-height: 40vh; display: flex; flex-direction: column;
+           background: var(--ink); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+           border-radius: 18px; border: 1px solid var(--line); transform: translateY(calc(100% + 40px)); transition: transform .25s ease; }
+  .sheet.open { transform: none; }
+  .sheet header { padding: 14px 16px 10px; display: flex; gap: 12px; align-items: flex-start; }
+  .sheet h2 { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.25; }
+  .meta { margin-top: 4px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .close { margin-left: auto; background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 13px; white-space: nowrap; }
+  .sheet .tags { padding: 0 16px 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: rgba(245,243,238,.08); color: var(--muted); }
+  .sheet h3 { margin: 4px 16px 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+  .neighbors { list-style: none; margin: 0; padding: 0 8px 12px; overflow-y: auto; }
+  .neighbors button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 10px; padding: 9px 8px;
+                      display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .neighbors button:active, .neighbors button:hover { background: rgba(245,243,238,.07); }
+  .neighbors .dir { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+  /* Szuflada folderów = legenda + filtr */
+  .drawer { position: absolute; top: calc(60px + env(safe-area-inset-top, 0px)); right: 12px; width: min(300px, calc(100% - 24px));
+            max-height: calc(100% - 140px); overflow-y: auto; background: var(--ink); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border-radius: 16px; border: 1px solid var(--line); padding: 10px; display: none; }
+  .drawer.open { display: block; }
+  .drawer .row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .drawer .row button { flex: 1; background: rgba(245,243,238,.06); border: 1px solid var(--line); border-radius: 10px; padding: 7px; font-size: 13px; }
+  .folder { width: 100%; display: flex; align-items: center; gap: 10px; background: transparent; border: 0; border-radius: 10px; padding: 8px; font-size: 14px; text-align: left; }
+  .folder .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .folder[aria-pressed="false"] { opacity: .38; }
+  .folder .swatch { width: 12px; height: 12px; margin: 0; }
+  .drawer .src { margin: 10px 4px 4px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .drawer label.load { display: block; margin-top: 8px; text-align: center; background: rgba(255,179,71,.14); color: var(--amber);
+                       border: 1px solid rgba(255,179,71,.4); border-radius: 10px; padding: 9px; font-size: 14px; cursor: pointer; }
+  .drawer input[type=file] { display: none; }
+
+  .toast { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+           background: var(--ink-solid); padding: 8px 14px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) { .sheet, .reticle, .aim-label, .toast { transition: none; } }
+
+  /* AR.js wstawia <video> z kamerą do body: zostaje pod sceną i pod HUD */
+  body > video { z-index: 0 !important; }
+  #graph, #graph a-scene { z-index: 1; }
+  .a-enter-vr, .a-enter-ar { display: none !important; }
+</style>
+<script>
+/* AR.js domyślnie pobiera plik wzoru markera i parametry kamery z ar-js-org.github.io.
+   Podmieniamy te adresy na kopie osadzone w stronie, żeby prototyp nie zależał od cudzego serwera. */
+(function () {
+  const pattHiro = ` 234 235 240 233 240 234 240 235 240 237 240 238 240 240 240 232
+ 229 240 240 240 240 240 240 240 240 240 240 240 240 240 240 228
+ 227 240 240 240 240 240 240 240 240 240 240 240 240 240 240 239
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 236 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 234 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 236 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 231 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 229 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 225 149 240 240 186 216 225 174 240 240 240 237 238 240 240 240
+ 150 107 238 231  75 208 115 147 238 228 223 226 237 180 226 240
+ 150  62 181 213  62 187 113 169 197  72  29 237 120  50  53 207
+ 149  63  47  78  53 184 113 101 142   5 150 150  45 217 186  83
+ 121  84 220 222  58 180 121  92 128 109 237 124 155 232 161  64
+ 149  71 240 240  76 210  98 109 122 108 240 129  51 119 161 155
+ 149 186 240 240  98 219 135 152 207 191 236 227 152  77 175 209
+ 235 235 240 233 240 234 240 235 240 236 240 238 240 240 240 240
+ 229 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 227 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 236 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 234 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 236 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 232 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 229 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 225 156 240 240 186 216 225 186 240 240 240 240 240 240 240 240
+ 150 117 240 231  72 206 115 162 240 232 223 237 240 180 226 240
+ 150  74 187 213  51 184 103 168 197  78  29 237 120  50  53 216
+ 144  77  51  74  61 184 106 101 142   5 150 152  52 217 186  85
+ 117  89 219 219  65 184 121  92 128 100 236 125 156 240 170  73
+ 148  71 240 240  76 210 109 109 121  99 240 137  51 120 166 164
+ 140 186 240 240  98 220 150 156 207 192 236 230 152  77 176 212
+ 234 235 240 233 240 234 240 235 240 236 240 238 240 240 240 233
+ 229 240 240 240 240 240 240 240 240 240 240 240 240 240 240 239
+ 227 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 234 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 232 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 235 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 232 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 228 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 225 156 240 240 182 212 225 180 240 240 240 240 240 240 240 240
+ 150 116 238 228  66 205 115 151 238 236 225 240 240 180 226 240
+ 156  84 186 211  47 184 109 170 200  92  30 240 120  50  53 216
+ 147  83  51  73  50 184 106 110 148  17 151 150  45 217 186  85
+ 127  98 219 219  58 179 109 101 128 107 237 125 155 240 163  72
+ 155  86 240 240  76 201  85 108 121  95 232 137  51 118 153 155
+ 149 189 240 240  98 220 141 154 206 178 235 230 152  77 175 209
+
+ 232 228 239 240 240 240 240 240 240 240 240 207  83  64 155 209
+ 240 240 240 240 240 240 240 240 240 240 226  53 186 161 161 175
+ 240 240 240 240 240 240 240 240 240 240 180  50 217 232 119  77
+ 240 240 240 240 240 240 240 240 240 238 237 120  45 155  51 152
+ 238 240 240 240 240 240 240 240 240 237 226 237 150 124 129 227
+ 240 240 240 240 240 240 240 240 240 240 223  29 150 237 240 236
+ 237 240 240 240 240 240 240 240 240 240 228  72   5 109 108 191
+ 240 240 240 240 240 240 240 240 240 240 238 197 142 128 122 207
+ 235 240 240 240 240 240 240 240 240 174 147 169 101  92 109 152
+ 240 240 240 240 240 240 240 240 240 225 115 113 113 121  98 135
+ 234 240 240 240 240 240 240 240 240 216 208 187 184 180 210 219
+ 240 240 240 240 240 240 240 240 240 186  75  62  53  58  76  98
+ 233 240 240 240 240 240 240 240 240 240 231 213  78 222 240 240
+ 240 240 240 240 240 240 240 240 240 240 238 181  47 220 240 240
+ 235 240 240 240 240 240 240 240 240 149 107  62  63  84  71 186
+ 234 229 227 240 236 234 236 231 229 225 150 150 149 121 149 149
+ 240 240 240 240 240 240 240 240 240 240 240 216  85  73 164 212
+ 240 240 240 240 240 240 240 240 240 240 226  53 186 170 166 176
+ 240 240 240 240 240 240 240 240 240 240 180  50 217 240 120  77
+ 240 240 240 240 240 240 240 240 240 240 240 120  52 156  51 152
+ 238 240 240 240 240 240 240 240 240 240 237 237 152 125 137 230
+ 240 240 240 240 240 240 240 240 240 240 223  29 150 236 240 236
+ 236 240 240 240 240 240 240 240 240 240 232  78   5 100  99 192
+ 240 240 240 240 240 240 240 240 240 240 240 197 142 128 121 207
+ 235 240 240 240 240 240 240 240 240 186 162 168 101  92 109 156
+ 240 240 240 240 240 240 240 240 240 225 115 103 106 121 109 150
+ 234 240 240 240 240 240 240 240 240 216 206 184 184 184 210 220
+ 240 240 240 240 240 240 240 240 240 186  72  51  61  65  76  98
+ 233 240 240 240 240 240 240 240 240 240 231 213  74 219 240 240
+ 240 240 240 240 240 240 240 240 240 240 240 187  51 219 240 240
+ 235 240 240 240 240 240 240 240 240 156 117  74  77  89  71 186
+ 235 229 227 240 236 234 236 232 229 225 150 150 144 117 148 140
+ 233 239 240 240 240 240 240 240 240 240 240 216  85  72 155 209
+ 240 240 240 240 240 240 240 240 240 240 226  53 186 163 153 175
+ 240 240 240 240 240 240 240 240 240 240 180  50 217 240 118  77
+ 240 240 240 240 240 240 240 240 240 240 240 120  45 155  51 152
+ 238 240 240 240 240 240 240 240 240 240 240 240 150 125 137 230
+ 240 240 240 240 240 240 240 240 240 240 225  30 151 237 232 235
+ 236 240 240 240 240 240 240 240 240 240 236  92  17 107  95 178
+ 240 240 240 240 240 240 240 240 240 240 238 200 148 128 121 206
+ 235 240 240 240 240 240 240 240 240 180 151 170 110 101 108 154
+ 240 240 240 240 240 240 240 240 240 225 115 109 106 109  85 141
+ 234 240 240 240 240 240 240 240 240 212 205 184 184 179 201 220
+ 240 240 240 240 240 240 240 240 240 182  66  47  50  58  76  98
+ 233 240 240 240 240 240 240 240 240 240 228 211  73 219 240 240
+ 240 240 240 240 240 240 240 240 240 240 238 186  51 219 240 240
+ 235 240 240 240 240 240 240 240 240 156 116  84  83  98  86 189
+ 234 229 227 240 234 232 235 232 228 225 150 156 147 127 155 149
+
+ 209 175  77 152 227 236 191 207 152 135 219  98 240 240 186 149
+ 155 161 119  51 129 240 108 122 109  98 210  76 240 240  71 149
+  64 161 232 155 124 237 109 128  92 121 180  58 222 220  84 121
+  83 186 217  45 150 150   5 142 101 113 184  53  78  47  63 149
+ 207  53  50 120 237  29  72 197 169 113 187  62 213 181  62 150
+ 240 226 180 237 226 223 228 238 147 115 208  75 231 238 107 150
+ 240 240 240 238 237 240 240 240 174 225 216 186 240 240 149 225
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 229
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 231
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 236
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 234
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 236
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 239 240 240 240 240 240 240 240 240 240 240 240 240 240 240 227
+ 228 240 240 240 240 240 240 240 240 240 240 240 240 240 240 229
+ 232 240 240 240 238 240 237 240 235 240 234 240 233 240 235 234
+ 212 176  77 152 230 236 192 207 156 150 220  98 240 240 186 140
+ 164 166 120  51 137 240  99 121 109 109 210  76 240 240  71 148
+  73 170 240 156 125 236 100 128  92 121 184  65 219 219  89 117
+  85 186 217  52 152 150   5 142 101 106 184  61  74  51  77 144
+ 216  53  50 120 237  29  78 197 168 103 184  51 213 187  74 150
+ 240 226 180 240 237 223 232 240 162 115 206  72 231 240 117 150
+ 240 240 240 240 240 240 240 240 186 225 216 186 240 240 156 225
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 229
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 232
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 236
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 234
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 236
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 227
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 229
+ 240 240 240 240 238 240 236 240 235 240 234 240 233 240 235 235
+ 209 175  77 152 230 235 178 206 154 141 220  98 240 240 189 149
+ 155 153 118  51 137 232  95 121 108  85 201  76 240 240  86 155
+  72 163 240 155 125 237 107 128 101 109 179  58 219 219  98 127
+  85 186 217  45 150 151  17 148 110 106 184  50  73  51  83 147
+ 216  53  50 120 240  30  92 200 170 109 184  47 211 186  84 156
+ 240 226 180 240 240 225 236 238 151 115 205  66 228 238 116 150
+ 240 240 240 240 240 240 240 240 180 225 212 182 240 240 156 225
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 228
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 232
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 235
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 232
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 234
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240
+ 240 240 240 240 240 240 240 240 240 240 240 240 240 240 240 227
+ 239 240 240 240 240 240 240 240 240 240 240 240 240 240 240 229
+ 233 240 240 240 238 240 236 240 235 240 234 240 233 240 235 234
+
+ 149 149 121 149 150 150 225 229 231 236 234 236 240 227 229 234
+ 186  71  84  63  62 107 149 240 240 240 240 240 240 240 240 235
+ 240 240 220  47 181 238 240 240 240 240 240 240 240 240 240 240
+ 240 240 222  78 213 231 240 240 240 240 240 240 240 240 240 233
+  98  76  58  53  62  75 186 240 240 240 240 240 240 240 240 240
+ 219 210 180 184 187 208 216 240 240 240 240 240 240 240 240 234
+ 135  98 121 113 113 115 225 240 240 240 240 240 240 240 240 240
+ 152 109  92 101 169 147 174 240 240 240 240 240 240 240 240 235
+ 207 122 128 142 197 238 240 240 240 240 240 240 240 240 240 240
+ 191 108 109   5  72 228 240 240 240 240 240 240 240 240 240 237
+ 236 240 237 150  29 223 240 240 240 240 240 240 240 240 240 240
+ 227 129 124 150 237 226 237 240 240 240 240 240 240 240 240 238
+ 152  51 155  45 120 237 238 240 240 240 240 240 240 240 240 240
+  77 119 232 217  50 180 240 240 240 240 240 240 240 240 240 240
+ 175 161 161 186  53 226 240 240 240 240 240 240 240 240 240 240
+ 209 155  64  83 207 240 240 240 240 240 240 240 240 239 228 232
+ 140 148 117 144 150 150 225 229 232 236 234 236 240 227 229 235
+ 186  71  89  77  74 117 156 240 240 240 240 240 240 240 240 235
+ 240 240 219  51 187 240 240 240 240 240 240 240 240 240 240 240
+ 240 240 219  74 213 231 240 240 240 240 240 240 240 240 240 233
+  98  76  65  61  51  72 186 240 240 240 240 240 240 240 240 240
+ 220 210 184 184 184 206 216 240 240 240 240 240 240 240 240 234
+ 150 109 121 106 103 115 225 240 240 240 240 240 240 240 240 240
+ 156 109  92 101 168 162 186 240 240 240 240 240 240 240 240 235
+ 207 121 128 142 197 240 240 240 240 240 240 240 240 240 240 240
+ 192  99 100   5  78 232 240 240 240 240 240 240 240 240 240 236
+ 236 240 236 150  29 223 240 240 240 240 240 240 240 240 240 240
+ 230 137 125 152 237 237 240 240 240 240 240 240 240 240 240 238
+ 152  51 156  52 120 240 240 240 240 240 240 240 240 240 240 240
+  77 120 240 217  50 180 240 240 240 240 240 240 240 240 240 240
+ 176 166 170 186  53 226 240 240 240 240 240 240 240 240 240 240
+ 212 164  73  85 216 240 240 240 240 240 240 240 240 240 240 240
+ 149 155 127 147 156 150 225 228 232 235 232 234 240 227 229 234
+ 189  86  98  83  84 116 156 240 240 240 240 240 240 240 240 235
+ 240 240 219  51 186 238 240 240 240 240 240 240 240 240 240 240
+ 240 240 219  73 211 228 240 240 240 240 240 240 240 240 240 233
+  98  76  58  50  47  66 182 240 240 240 240 240 240 240 240 240
+ 220 201 179 184 184 205 212 240 240 240 240 240 240 240 240 234
+ 141  85 109 106 109 115 225 240 240 240 240 240 240 240 240 240
+ 154 108 101 110 170 151 180 240 240 240 240 240 240 240 240 235
+ 206 121 128 148 200 238 240 240 240 240 240 240 240 240 240 240
+ 178  95 107  17  92 236 240 240 240 240 240 240 240 240 240 236
+ 235 232 237 151  30 225 240 240 240 240 240 240 240 240 240 240
+ 230 137 125 150 240 240 240 240 240 240 240 240 240 240 240 238
+ 152  51 155  45 120 240 240 240 240 240 240 240 240 240 240 240
+  77 118 240 217  50 180 240 240 240 240 240 240 240 240 240 240
+ 175 153 163 186  53 226 240 240 240 240 240 240 240 240 240 240
+ 209 155  72  85 216 240 240 240 240 240 240 240 240 240 239 233
+
+`;
+  const camB64 = "AAACgAAAAeBAgwrsW6bUSwAAAAAAAAAAQHQ3KqAAAAAAAAAAAAAAAAAAAAAAAAAAQIL0K3dHyf9AbbNowAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAA/uWNa4AAAAL+3lTLAAAAAv17YFWAAAAA/VYLXIAAAAECCe0YgAAAAQIJlMOAAAABAdDcqoAAAAEBts2jAAAAAP+8OmzqkDy4=";
+  const camBytes = Uint8Array.from(atob(camB64), c => c.charCodeAt(0));
+  const map = {
+    'patt.hiro': URL.createObjectURL(new Blob([pattHiro], { type: 'text/plain' })),
+    'pattern-hiro.patt': URL.createObjectURL(new Blob([pattHiro], { type: 'text/plain' })),
+    'camera_para.dat': URL.createObjectURL(new Blob([camBytes], { type: 'application/octet-stream' }))
+  };
+  const rewrite = url => {
+    if (typeof url !== 'string') return url;
+    for (const k in map) if (url.endsWith(k)) return map[k];
+    return url;
+  };
+  const open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (m, url, ...rest) { return open.call(this, m, rewrite(url), ...rest); };
+  const f = window.fetch;
+  window.fetch = (input, init) => f(typeof input === 'string' ? rewrite(input) : input, init);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.8.0/dist/aframe-v1.8.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/3d-force-graph-ar@1.10.0/dist/3d-force-graph-ar.min.js"></script>
 </head>
 <body>
+<div id="graph"></div>
 
-<div id="info-panel">
-    <div id="info">GPS: Czekam...</div>
-    <div id="status">System w gotowości</div>
+<div class="hud" id="hud">
+  <div class="top">
+    <div class="status" id="status" role="status"><span class="dot"></span><span id="statusText">Szukam markera</span></div>
+    <div class="spacer"></div>
+    <button class="chip-btn" id="foldersBtn" aria-pressed="false" aria-controls="drawer">Foldery</button>
+  </div>
+
+  <div class="reticle" id="reticle" aria-hidden="true"></div>
+  <div class="aim-label" id="aimLabel" aria-live="polite"></div>
+
+  <div class="hint" id="hint">
+    <p>Skieruj kamerę na wydrukowany marker. Graf pojawi się nad nim.</p>
+    <p>Celownik na środku ekranu wskazuje notatkę. Dotknij ekranu, żeby ją wybrać.</p>
+  </div>
+
+  <section class="sheet" id="sheet" aria-label="Wybrana notatka">
+    <header>
+      <div>
+        <h2 id="noteTitle"></h2>
+        <div class="meta" id="noteMeta"></div>
+      </div>
+      <button class="close" id="closeBtn">Pokaż całość</button>
+    </header>
+    <div class="tags" id="noteTags"></div>
+    <h3 id="neighborsHead"></h3>
+    <ul class="neighbors" id="neighbors"></ul>
+  </section>
+
+  <aside class="drawer" id="drawer" aria-label="Foldery">
+    <div class="row"><button id="allOn">Wszystkie</button><button id="allOff">Żaden</button></div>
+    <div id="folderList"></div>
+    <p class="src" id="dataSource"></p>
+    <label class="load">Wczytaj graph.json z vaulta<input type="file" id="fileInput" accept=".json,application/json"></label>
+  </aside>
+
+  <div class="toast" id="toast"></div>
 </div>
 
-<div id="ui">
-    <button id="startBtn">START SYSTEM</button>
-    
-    <div id="loader-container">
-        <div id="loader-bar"></div>
-    </div>
-    <div id="loader-text">Inicjalizacja łącza...</div>
-</div>
 
-<canvas id="radar"></canvas>
 
 <script>
-    // --- DANE ZAPASOWE ---
-    const BACKUP_TLE = `
-STARLINK-1007
-1 44713U 19074A   24008.43658925  .00004561  00000-0  34567-3 0  9991
-2 44713  53.0543 175.6123 0001452  95.6789 264.4567 15.06392134234568
-STARLINK-1008
-1 44714U 19074B   24008.43658925  .00004561  00000-0  34567-3 0  9992
-2 44714  53.0543 185.6123 0001452  95.6789 264.4567 15.06392134234561
-STARLINK-1009
-1 44715U 19074C   24008.43658925  .00004561  00000-0  34567-3 0  9993
-2 44715  53.0543 195.6123 0001452  95.6789 264.4567 15.06392134234564
-STARLINK-1010
-1 44716U 19074D   24008.43658925  .00004561  00000-0  34567-3 0  9994
-2 44716  53.0543 205.6123 0001452  95.6789 264.4567 15.06392134234567
-STARLINK-1011
-1 44717U 19074E   24008.43658925  .00004561  00000-0  34567-3 0  9995
-2 44717  53.0543 215.6123 0001452  95.6789 264.4567 15.06392134234560
-STARLINK-3012
-1 54717U 22074E   24008.43658925  .00004561  00000-0  34567-3 0  9995
-2 54717  53.2000 010.0000 0001452  95.0000 264.0000 15.06392134234560
-STARLINK-3013
-1 54718U 22074F   24008.43658925  .00004561  00000-0  34567-3 0  9996
-2 54718  53.2000 020.0000 0001452  95.0000 264.0000 15.06392134234563
-STARLINK-3014
-1 54719U 22074G   24008.43658925  .00004561  00000-0  34567-3 0  9997
-2 54719  53.2000 030.0000 0001452  95.0000 264.0000 15.06392134234566
-STARLINK-3015
-1 54720U 22074H   24008.43658925  .00004561  00000-0  34567-3 0  9998
-2 54720  53.2000 040.0000 0001452  95.0000 264.0000 15.06392134234569
-STARLINK-3016
-1 54721U 22074J   24008.43658925  .00004561  00000-0  34567-3 0  9999
-2 54721  53.2000 050.0000 0001452  95.0000 264.0000 15.06392134234562
-`;
+/* ---------- Przykładowe dane ----------
+   Foldery to prawdziwe foldery z Twojego vaulta. Notatki i połączenia są przykładowe:
+   część nazw pochodzi z naszych rozmów (OpenAI, Antropic, MCP Main, OpenCV, YOLOv8, C Sharp, AutoCAD),
+   reszta jest dopisana, żeby graf miał realistyczny kształt. Prawdziwe dane: przycisk "Wczytaj graph.json". */
+const SAMPLE = (() => {
+  const n = (id, folder, tags = []) => ({ id, name: id, folder, tags });
+  const nodes = [
+    n('▲ OpenAI', '📦 AI', ['llm', 'api']), n('◭ Antropic', '📦 AI', ['llm', 'api']), n('▲ MCP Main', '📦 AI', ['mcp', 'agenci']),
+    n('▲ OpenCV', '📦 AI', ['cv']), n('▲ LangGraph', '📦 AI', ['agenci']), n('▲ Claude Code', '📦 AI', ['agenci', 'kod']),
+    n('▲ nanoBanana', '📦 AI', ['obraz', 'genai']),
+    n('▲ RNN', '📦 Deep Learning', ['sieci']), n('▲ CNN', '📦 Deep Learning', ['sieci', 'cv']), n('▲ Transformers', '📦 Deep Learning', ['sieci', 'llm']),
+    n('▲ GAN Basics', '📦 GAN', ['genai']), n('▲ StyleGAN', '📦 GAN', ['genai', 'obraz']),
+    n('▲ Python', '📦 Python', ['język']), n('◮ YOLOv8', '📦 Python', ['cv', 'detekcja']), n('▲ NumPy', '📦 Python', ['dane']),
+    n('▲ Pandas', '📦 Python', ['dane']), n('▲ Brian2', '📦 Python', ['neuro', 'symulacja']),
+    n('▲ C Sharp', '📦 C#', ['język', '.net']), n('▲ PowerShell', '📦 PowerShell', ['skrypty']),
+    n('▲ AutoCAD', '📦 3D CAD', ['cad']), n('▲ Revit', '📦 3D CAD', ['bim']), n('▲ Revit API', '📦 3D CAD', ['bim', '.net']),
+    n('▲ SketchUp', '📦 3D CAD', ['cad']),
+    n('▲ Grasshopper', '📦 Grasshopper', ['parametryka']), n('▲ Rhino', '📦 Grasshopper', ['cad']),
+    n('▲ Omniverse', '📦 Omniverse', ['3d', 'digital twin']), n('▲ USD', '📦 Omniverse', ['3d', 'format']),
+    n('▲ Unreal Engine', '📦 Unreal', ['3d', 'real-time']), n('▲ Datasmith', '📦 Unreal', ['3d', 'bim']), n('▲ WebXR', '📦 Unreal', ['ar', 'vr']),
+    n('▲ Azure', '📦 Azure', ['chmura']), n('▲ Azure AI Foundry', '📦 Azure', ['chmura', 'agenci']),
+    n('▲ Docker', '📦 Docker', ['devops']), n('▲ MCP Docker', '📦 Docker', ['mcp', 'devops']),
+    n('▲ Git', '📦 Git', ['devops']), n('▲ GitHub', '📦 Git', ['devops']),
+    n('▲ Power Automate', '📦 Power Platform', ['automatyzacja']), n('▲ Copilot Studio', '📦 Power Platform', ['agenci']),
+    n('▲ Power BI', '📦 PowerBI', ['dane', 'raporty']), n('▲ DAX', '📦 PowerBI', ['dane']),
+    n('▲ QGIS', '📦 GIS', ['mapy']), n('▲ GIS', '📦 GIS', ['mapy', 'dane']),
+    n('▲◭△ BASE Template', '📦 Base', ['szablon']),
+    n('▲ Visual Studio Code Insiders', '📦 Notebooks', ['kod']), n('▲ Jupyter', '📦 Notebooks', ['kod', 'dane'])
+  ];
+  const L = [
+    ['▲ OpenAI','◭ Antropic'],['▲ OpenAI','▲ Transformers'],['◭ Antropic','▲ MCP Main'],['◭ Antropic','▲ Claude Code'],
+    ['▲ MCP Main','▲ MCP Docker'],['▲ MCP Main','▲ LangGraph'],['▲ MCP Main','▲ Claude Code'],['▲ MCP Main','▲ Revit API'],
+    ['▲ LangGraph','▲ Python'],['▲ LangGraph','▲ OpenAI'],['▲ Claude Code','▲ Visual Studio Code Insiders'],['▲ Claude Code','▲ GitHub'],
+    ['▲ nanoBanana','▲ StyleGAN'],['▲ nanoBanana','▲ OpenAI'],
+    ['▲ OpenCV','▲ Python'],['▲ OpenCV','◮ YOLOv8'],['▲ OpenCV','▲ CNN'],['▲ OpenCV','▲ NumPy'],
+    ['▲ RNN','▲ Transformers'],['▲ CNN','◮ YOLOv8'],['▲ CNN','▲ GAN Basics'],['▲ GAN Basics','▲ StyleGAN'],['▲ RNN','▲ Python'],
+    ['▲ Python','▲ NumPy'],['▲ Python','▲ Pandas'],['▲ Python','▲ Jupyter'],['▲ Python','▲ Brian2'],['▲ NumPy','▲ Pandas'],
+    ['▲ Pandas','▲ Power BI'],['▲ Python','▲ Grasshopper'],['▲ Python','▲ Omniverse'],['▲ Python','▲ QGIS'],
+    ['▲ C Sharp','▲ Revit API'],['▲ C Sharp','▲ AutoCAD'],['▲ C Sharp','▲ Visual Studio Code Insiders'],['▲ C Sharp','▲ Grasshopper'],
+    ['▲ PowerShell','▲ Azure'],['▲ PowerShell','▲ Docker'],
+    ['▲ Revit','▲ Revit API'],['▲ Revit','▲ Datasmith'],['▲ Revit','▲ AutoCAD'],['▲ Revit','▲ Omniverse'],['▲ SketchUp','▲ Datasmith'],
+    ['▲ Rhino','▲ Grasshopper'],['▲ Rhino','▲ Datasmith'],
+    ['▲ Omniverse','▲ USD'],['▲ Omniverse','▲ Unreal Engine'],['▲ Unreal Engine','▲ Datasmith'],['▲ Unreal Engine','▲ WebXR'],['▲ USD','▲ WebXR'],
+    ['▲ Azure','▲ Azure AI Foundry'],['▲ Azure AI Foundry','▲ OpenAI'],['▲ Azure','▲ Docker'],['▲ Docker','▲ MCP Docker'],
+    ['▲ Git','▲ GitHub'],['▲ Git','▲ Visual Studio Code Insiders'],
+    ['▲ Power Automate','▲ Copilot Studio'],['▲ Copilot Studio','▲ Azure AI Foundry'],['▲ Power Automate','▲ Power BI'],['▲ Power BI','▲ DAX'],
+    ['▲ GIS','▲ QGIS'],['▲ GIS','▲ Power BI'],['▲ GIS','▲ Revit'],
+    ['▲◭△ BASE Template','▲ OpenAI'],['▲ Jupyter','▲ Visual Studio Code Insiders']
+  ];
+  return { nodes, links: L.map(([source, target]) => ({ source, target })), source: 'Przykładowe dane zbudowane na folderach Twojego vaulta.' };
+})();
 
-    const TLE_URL = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle';
-    const MAX_SATS_AUDIO = 5; 
-    const BASE_FREQ = 110; 
+/* ---------- Kolory folderów ----------
+   Foldery z Twojego vaulta dostają barwy według dziedziny, nieznane foldery biorą kolory z palety. */
+const DOMAIN = {
+  '📦 AI': '#b18cff', '📦 Deep Learning': '#9a7cf0', '📦 GAN': '#d39cff',
+  '📦 Python': '#5aa9ff', '📦 C#': '#7cc4ff', '📦 PowerShell': '#4f8fe0',
+  '📦 3D CAD': '#ff9a4d', '📦 Grasshopper': '#ffc061', '📦 Omniverse': '#9ed36a', '📦 Unreal': '#ff7a6b',
+  '📦 Azure': '#4fd1c5', '📦 Docker': '#38b2ac', '📦 Git': '#81e6d9',
+  '📦 Power Platform': '#f6e05e', '📦 PowerBI': '#ecc94b', '📦 GIS': '#68d391',
+  '📦 Base': '#e2e8f0', '📦 Notebooks': '#cbd5e0'
+};
+const PALETTE = ['#b18cff','#5aa9ff','#ff9a4d','#4fd1c5','#f6e05e','#68d391','#ff7a6b','#d39cff','#7cc4ff','#ffc061','#81e6d9','#e2e8f0'];
+const DIM = '#3b4252';
+const HUB_LABELS = 10;
 
-    // Zmienne
-    let satRecords = [];
-    let audioCtx;
-    let oscillators = [];
-    let userLat = 52.2297; 
-    let userLon = 21.0122;
-    let canvas, ctx;
-    let isRunning = false;
+/* ---------- Stan ---------- */
+let data, byId, folderColor, hidden = new Set(), focus = null, neighborIds = new Set(), hubs = new Set();
+const $ = id => document.getElementById(id);
 
-    // --- UTILS UI ---
-    function updateProgress(percent, text) {
-        const bar = document.getElementById('loader-bar');
-        const txt = document.getElementById('loader-text');
-        if(bar) bar.style.width = percent + '%';
-        if(txt && text) txt.innerText = text;
-    }
+function prepare(raw, sourceText) {
+  const nodes = raw.nodes.map(n => ({ id: n.id, name: n.name || n.id, folder: n.folder || '(bez folderu)', tags: n.tags || [] }));
+  byId = new Map(nodes.map(n => [n.id, n]));
+  const links = raw.links
+    .map(l => ({ source: typeof l.source === 'object' ? l.source.id : l.source, target: typeof l.target === 'object' ? l.target.id : l.target }))
+    .filter(l => byId.has(l.source) && byId.has(l.target) && l.source !== l.target);
+  nodes.forEach(n => { n.out = []; n.in = []; });
+  links.forEach(l => { byId.get(l.source).out.push(l.target); byId.get(l.target).in.push(l.source); });
+  nodes.forEach(n => { n.degree = new Set([...n.out, ...n.in]).size; n.val = 1 + n.degree; });
+  hubs = new Set([...nodes].sort((a, b) => b.degree - a.degree).slice(0, HUB_LABELS).map(n => n.id));
 
-    // --- SYSTEM AUDIO ---
-    function initAudio() {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AudioContext();
-        
-        for(let i=0; i<MAX_SATS_AUDIO; i++) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            
-            osc.type = 'sine';
-            osc.frequency.value = 0;
-            gain.gain.value = 0;
-            
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start();
-            oscillators.push({osc, gain});
-        }
-    }
+  const folders = [...new Set(nodes.map(n => n.folder))].sort((a, b) => a.localeCompare(b, 'pl'));
+  folderColor = {};
+  let p = 0;
+  folders.forEach(f => { folderColor[f] = DOMAIN[f] || PALETTE[p++ % PALETTE.length]; });
+  hidden = new Set(); focus = null; neighborIds = new Set();
+  data = { nodes, links, folders, source: sourceText };
+}
 
-    function updateAudio(visibleSats) {
-        if(!audioCtx) return;
+/* ---------- Etykiety 3D: tylko huby, fokus i sąsiedzi ---------- */
+const labelCache = new Map();
+function labelSprite(text, strong) {
+  const key = text + (strong ? '|s' : '');
+  if (!labelCache.has(key)) {
+    const THREE = AFRAME.THREE;
+    const c = document.createElement('canvas'), ctx = c.getContext('2d');
+    const fontPx = 44, pad = 18;
+    ctx.font = `${strong ? 600 : 500} ${fontPx}px "IBM Plex Sans", system-ui, sans-serif`;
+    const w = Math.ceil(ctx.measureText(text).width) + pad * 2, h = fontPx + pad * 1.4;
+    c.width = w; c.height = h;
+    ctx.font = `${strong ? 600 : 500} ${fontPx}px "IBM Plex Sans", system-ui, sans-serif`;
+    ctx.fillStyle = strong ? 'rgba(40,26,6,0.85)' : 'rgba(10,16,30,0.72)';
+    const r = 14;
+    ctx.beginPath(); ctx.moveTo(r, 0); ctx.arcTo(w, 0, w, h, r); ctx.arcTo(w, h, 0, h, r); ctx.arcTo(0, h, 0, 0, r); ctx.arcTo(0, 0, w, 0, r); ctx.fill();
+    ctx.fillStyle = strong ? '#ffb347' : '#f5f3ee';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, pad, h / 2 + 2);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    labelCache.set(key, { tex, aspect: w / h });
+  }
+  const { tex, aspect } = labelCache.get(key);
+  const THREE = AFRAME.THREE;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false }));
+  const height = strong ? 16 : 12;
+  s.scale.set(height * aspect, height, 1);
+  s.position.set(0, 15, 0);
+  s.renderOrder = 10;
+  return s;
+}
 
-        visibleSats.sort((a, b) => b.elevation - a.elevation);
-        const topSats = visibleSats.slice(0, MAX_SATS_AUDIO);
+const shortName = n => n.name.length > 28 ? n.name.slice(0, 27) + '…' : n.name;
+const inFocus = n => !focus || n.id === focus.id || neighborIds.has(n.id);
+const linkEnds = l => [typeof l.source === 'object' ? l.source.id : l.source, typeof l.target === 'object' ? l.target.id : l.target];
+const linkTouchesFocus = l => { const [s, t] = linkEnds(l); return focus && (s === focus.id || t === focus.id); };
 
-        oscillators.forEach(o => {
-            o.gain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2); 
-        });
+/* ---------- Graf ---------- */
+const graph = new ForceGraphAR($('graph'), {
+  markerAttrs: { preset: 'hiro', smooth: true, smoothCount: 8, smoothTolerance: 0.01, smoothThreshold: 3 }
+})
+  .width(window.innerWidth).height(window.innerHeight)
+  .glScale(320).yOffset(1.3)
+  .nodeRelSize(3.4).nodeResolution(12).nodeOpacity(0.95)
+  .linkOpacity(0.35).linkWidth(0)
+  .linkDirectionalParticleWidth(3).linkDirectionalParticleSpeed(0.012)
+  .warmupTicks(250).cooldownTicks(0);       // układ liczony raz przy starcie, potem graf stoi w miejscu
 
-        topSats.forEach((sat, i) => {
-            const sound = oscillators[i];
-            const pitchMultiplier = 1.0 + (sat.elevation / 90.0) * 3.0;
-            const safeFreq = BASE_FREQ * pitchMultiplier;
+/* ---------- Celownik: wybór notatki najbliższej środka ekranu ----------
+   Zamiast trafiać promieniem w małą kulkę, co klatkę rzutujemy węzły na ekran
+   i bierzemy ten, który leży najbliżej celownika (w promieniu AIM_RADIUS px). */
+const AIM_RADIUS = 48;
+let aimed = null;
+const tmpV = () => new AFRAME.THREE.Vector3();
+function pickLoop() {
+  requestAnimationFrame(pickLoop);
+  const sceneEl = document.querySelector('a-scene'), marker = document.querySelector('a-marker');
+  if (!sceneEl || !sceneEl.camera || !marker || !marker.object3D.visible || !data) { if (aimed) { aimed = null; onHover(null); } return; }
+  const cam = sceneEl.camera, w = window.innerWidth, h = window.innerHeight, v = tmpV();
+  let best = null, bestD = AIM_RADIUS;
+  for (const n of graph.graphData().nodes) {
+    if (hidden.has(n.folder) || !n.__threeObj) continue;
+    n.__threeObj.getWorldPosition(v).project(cam);
+    if (v.z > 1) continue;
+    const dx = (v.x * 0.5) * w, dy = (v.y * 0.5) * h, d = Math.hypot(dx, dy);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  if (best !== aimed) { aimed = best; onHover(best); }
+}
+requestAnimationFrame(pickLoop);
 
-            sound.osc.frequency.setTargetAtTime(safeFreq, audioCtx.currentTime, 0.1);
-            
-            const vol = 0.15 * (sat.elevation / 90.0);
-            sound.gain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.1);
-        });
-    }
+/* Dotknięcie sceny (nie panelu) wybiera notatkę pod celownikiem; dotknięcie pustego miejsca nic nie zmienia. */
+let downAt = null;
+$('graph').addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+$('graph').addEventListener('pointerup', e => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 12) return;
+  downAt = null;
+  if (aimed) setFocus(focus && focus.id === aimed.id ? null : aimed);
+});
 
-    // --- LOGIKA ---
-    function parseTLE(tleString) {
-        const lines = tleString.split('\n');
-        const records = [];
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (line.length === 0) continue;
-            if (lines[i+1] && lines[i+2] && lines[i+1].startsWith('1 ') && lines[i+2].startsWith('2 ')) {
-                const satrec = satellite.twoline2satrec(lines[i+1].trim(), lines[i+2].trim());
-                records.push(satrec);
-                i += 2;
-            }
-        }
-        return records;
-    }
+/* Każde wywołanie podaje NOWĄ funkcję: A-Frame aktualizuje atrybut tylko przy zmianie wartości. */
+function applyStyles() {
+  graph
+    .nodeVisibility(n => !hidden.has(n.folder))
+    .nodeColor(n => inFocus(n) ? folderColor[n.folder] : DIM)
+    .nodeThreeObjectExtend(true)
+    .nodeThreeObject(n => {
+      if (focus && n.id === focus.id) return labelSprite(shortName(n), true);
+      if (focus && neighborIds.has(n.id)) return labelSprite(shortName(n), false);
+      if (!focus && hubs.has(n.id)) return labelSprite(shortName(n), false);
+      return null;
+    })
+    .linkVisibility(l => {
+      const [s, t] = linkEnds(l);
+      if (hidden.has(byId.get(s).folder) || hidden.has(byId.get(t).folder)) return false;
+      return !focus || linkTouchesFocus(l);
+    })
+    .linkColor(l => focus ? '#ffb347' : '#c9d2e3')
+    .linkDirectionalParticles(l => linkTouchesFocus(l) ? 3 : 0)
+    .linkDirectionalParticleColor(() => '#ffb347');
+}
 
-    async function fetchTLE() {
-        const statusEl = document.getElementById('status');
-        updateProgress(5, "Łączenie z CelesTrak...");
-        
-        try {
-            const response = await fetch(TLE_URL);
-            if (!response.ok) throw new Error("Błąd sieci");
+function loadGraph() {
+  graph.graphData({ nodes: data.nodes, links: data.links.map(l => ({ ...l })) });
+  applyStyles();
+  renderFolders();
+  closeSheet();
+}
 
-            // Obsługa paska postępu przy pobieraniu
-            const reader = response.body.getReader();
-            const contentLength = +response.headers.get('Content-Length');
-            
-            let receivedLength = 0;
-            let chunks = [];
-            
-            // Jeśli znamy długość, ładnie skalujemy. Jeśli nie, symulujemy.
-            const totalLength = contentLength || 500000; // Zakładamy ok 500kb jeśli brak nagłówka
+/* ---------- Celowanie ---------- */
+function onHover(n) {
+  const r = $('reticle'), lab = $('aimLabel');
+  if (n && !hidden.has(n.folder) && !(focus && n.id === focus.id)) {
+    r.classList.add('on');
+    lab.innerHTML = '';
+    lab.append(document.createTextNode(n.name));
+    const s = document.createElement('small'); s.textContent = `${n.folder}, połączeń: ${n.degree}. Dotknij, żeby wybrać`;
+    lab.append(s);
+    lab.classList.add('on');
+  } else {
+    r.classList.remove('on');
+    lab.classList.remove('on');
+  }
+}
 
-            while(true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                
-                chunks.push(value);
-                receivedLength += value.length;
-                
-                let pct = (receivedLength / totalLength) * 100;
-                if(pct > 100) pct = 95; // Żeby nie przeskoczyło za szybko
-                updateProgress(pct, `Pobieranie: ${(receivedLength/1024).toFixed(0)} KB`);
-            }
+/* ---------- Fokus i panel notatki ---------- */
+function setFocus(n) {
+  focus = n || null;
+  neighborIds = new Set(n ? [...n.out, ...n.in] : []);
+  applyStyles();
+  if (n) openSheet(n); else closeSheet();
+}
 
-            // Scalanie chunków
-            let chunksAll = new Uint8Array(receivedLength);
-            let position = 0;
-            for(let chunk of chunks) {
-                chunksAll.set(chunk, position);
-                position += chunk.length;
-            }
-            
-            const text = new TextDecoder("utf-8").decode(chunksAll);
-            updateProgress(100, "Przetwarzanie danych...");
-            
-            satRecords = parseTLE(text);
-            statusEl.innerText = `ONLINE: Śledzę ${satRecords.length} Starlinków`;
-            statusEl.style.color = "#0f0";
+function openSheet(n) {
+  $('hint').style.display = 'none';
+  $('noteTitle').textContent = n.name;
+  const meta = $('noteMeta'); meta.innerHTML = '';
+  const f = document.createElement('span');
+  f.innerHTML = `<span class="swatch" style="background:${folderColor[n.folder]}"></span>`;
+  f.append(document.createTextNode(n.folder));
+  meta.append(f);
+  const d = document.createElement('span'); d.textContent = `połączeń: ${n.degree}`; meta.append(d);
 
-        } catch (e) {
-            console.warn("Błąd pobierania (CORS), używam danych zapasowych.", e);
-            statusEl.innerText = "OFFLINE (Demo)";
-            statusEl.style.color = "orange";
-            
-            // Symulacja ładowania w trybie offline
-            for(let i=0; i<=100; i+=10) {
-                updateProgress(i, "Ładowanie bazy offline...");
-                await new Promise(r => setTimeout(r, 50));
-            }
-            
-            let baseRecords = parseTLE(BACKUP_TLE);
-            satRecords = baseRecords; 
-            for(let i=0; i<500; i++) {
-                 satRecords.push(baseRecords[i % baseRecords.length]);
-            }
-        }
-    }
+  const tags = $('noteTags'); tags.innerHTML = '';
+  n.tags.forEach(t => { const s = document.createElement('span'); s.className = 'tag'; s.textContent = '#' + t; tags.append(s); });
 
-    function getVisibleSatellites() {
-        const now = new Date();
-        const visible = [];
-        
-        satRecords.forEach((satrec, index) => {
-            let timeShift = 0;
-            if (document.getElementById('status').innerText.includes("OFFLINE")) {
-                timeShift = index * 60000 * 5; 
-            }
-            
-            const timeToCheck = new Date(now.getTime() + timeShift);
-            const positionAndVelocity = satellite.propagate(satrec, timeToCheck);
-            const positionEci = positionAndVelocity.position;
-            
-            if (!positionEci) return;
+  const list = $('neighbors'); list.innerHTML = '';
+  const ids = [...neighborIds].sort((a, b) => byId.get(b).degree - byId.get(a).degree);
+  $('neighborsHead').textContent = ids.length ? 'Połączone notatki' : 'Ta notatka nie ma jeszcze połączeń';
+  ids.forEach(id => {
+    const m = byId.get(id);
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.innerHTML = `<span class="swatch" style="background:${folderColor[m.folder]}"></span>`;
+    b.append(document.createTextNode(m.name));
+    const dir = document.createElement('span'); dir.className = 'dir';
+    const o = n.out.includes(id), i = n.in.includes(id);
+    dir.textContent = o && i ? 'w obie strony' : o ? 'link wychodzący' : 'link przychodzący';
+    b.append(dir);
+    b.addEventListener('click', () => setFocus(m));
+    li.append(b); list.append(li);
+  });
+  $('sheet').classList.add('open');
+}
+function closeSheet() { $('sheet').classList.remove('open'); }
+$('closeBtn').addEventListener('click', () => setFocus(null));
 
-            const gmst = satellite.gstime(timeToCheck);
-            const lookLook = satellite.ecfToLookAngles(
-                {
-                    observerGd: {
-                        latitude: userLat * Math.PI / 180,
-                        longitude: userLon * Math.PI / 180,
-                        height: 0
-                    }
-                },
-                satellite.eciToEcf(positionEci, gmst)
-            );
+/* ---------- Foldery: legenda i filtr ---------- */
+function renderFolders() {
+  const box = $('folderList'); box.innerHTML = '';
+  const counts = {};
+  data.nodes.forEach(n => counts[n.folder] = (counts[n.folder] || 0) + 1);
+  data.folders.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'folder';
+    b.setAttribute('aria-pressed', String(!hidden.has(f)));
+    b.innerHTML = `<span class="swatch" style="background:${folderColor[f]}"></span>`;
+    b.append(document.createTextNode(f));
+    const c = document.createElement('span'); c.className = 'count'; c.textContent = counts[f]; b.append(c);
+    b.addEventListener('click', () => {
+      hidden.has(f) ? hidden.delete(f) : hidden.add(f);
+      if (focus && hidden.has(focus.folder)) setFocus(null); else applyStyles();
+      renderFolders();
+    });
+    box.append(b);
+  });
+  $('dataSource').textContent = `${data.source} Notatek: ${data.nodes.length}, połączeń: ${data.links.length}.`;
+}
+$('allOn').addEventListener('click', () => { hidden.clear(); applyStyles(); renderFolders(); });
+$('allOff').addEventListener('click', () => { hidden = new Set(data.folders); setFocus(null); renderFolders(); });
+$('foldersBtn').addEventListener('click', e => {
+  const open = $('drawer').classList.toggle('open');
+  e.currentTarget.setAttribute('aria-pressed', String(open));
+});
 
-            const elevationDeg = lookLook.elevation * 180 / Math.PI;
+/* ---------- Wczytanie prawdziwego eksportu ---------- */
+$('fileInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const raw = JSON.parse(await file.text());
+    if (!Array.isArray(raw.nodes) || !Array.isArray(raw.links)) throw new Error('Plik nie ma list "nodes" i "links".');
+    prepare(raw, `Wczytano ${file.name}.`);
+    loadGraph();
+    toast(`Wczytano graf. Notatek: ${data.nodes.length}`);
+  } catch (err) {
+    toast('Nie udało się wczytać pliku: ' + err.message);
+  }
+  e.target.value = '';
+});
 
-            if (elevationDeg > 10) { 
-                visible.push({
-                    azimuth: lookLook.azimuth,
-                    elevation: elevationDeg,
-                    range: lookLook.rangeSat
-                });
-            }
-        });
-        return visible;
-    }
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2600);
+}
 
-    // --- WIZUALIZACJA ---
-    function initCanvas() {
-        canvas = document.getElementById('radar');
-        ctx = canvas.getContext('2d');
-        resize();
-        window.addEventListener('resize', resize);
-    }
+/* ---------- Status markera ---------- */
+function hookMarker() {
+  const m = document.querySelector('a-marker');
+  if (!m) return setTimeout(hookMarker, 200);
+  m.addEventListener('markerFound', () => {
+    $('status').classList.add('found'); $('statusText').textContent = 'Marker widoczny';
+    clearTimeout(hookMarker._h); hookMarker._h = setTimeout(() => { $('hint').style.display = 'none'; }, 6000);
+  });
+  m.addEventListener('markerLost', () => {
+    $('status').classList.remove('found'); $('statusText').textContent = 'Szukam markera';
+  });
+}
+hookMarker();
 
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
+window.addEventListener('resize', () => graph.width(window.innerWidth).height(window.innerHeight));
 
-    function drawRadar(sats) {
-        ctx.fillStyle = 'rgba(5, 5, 16, 0.15)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const maxRadius = Math.min(cx, cy) - 20;
-
-        ctx.strokeStyle = 'rgba(0, 255, 204, 0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        ctx.beginPath();
-        ctx.arc(cx, cy, maxRadius * 0.5, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(0, 255, 204, 0.1)';
-        ctx.stroke();
-
-        ctx.strokeStyle = 'rgba(0, 255, 204, 0.1)';
-        ctx.beginPath();
-        ctx.moveTo(cx - maxRadius, cy); ctx.lineTo(cx + maxRadius, cy);
-        ctx.moveTo(cx, cy - maxRadius); ctx.lineTo(cx, cy + maxRadius);
-        ctx.stroke();
-
-        sats.forEach(sat => {
-            const r = maxRadius * (1 - (sat.elevation / 90));
-            const angle = sat.azimuth - Math.PI / 2;
-
-            const x = cx + r * Math.cos(angle);
-            const y = cy + r * Math.sin(angle);
-
-            ctx.beginPath();
-            const hue = 120 + (sat.elevation / 90) * 60;
-            const light = 50 + (sat.elevation / 90) * 50;
-            
-            ctx.fillStyle = `hsl(${hue}, 100%, ${light}%)`;
-            
-            const size = 5 + (sat.elevation / 90) * 10;
-            ctx.arc(x, y, size, 0, Math.PI * 2);
-            ctx.fill();
-            
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = ctx.fillStyle;
-            ctx.fill();
-            ctx.shadowBlur = 0;
-        });
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(cx-3, cy-3, 6, 6);
-    }
-
-    function loop() {
-        if(!isRunning) return;
-        const visible = getVisibleSatellites();
-        drawRadar(visible);
-        updateAudio(visible);
-        requestAnimationFrame(loop);
-    }
-
-    const startBtn = document.getElementById('startBtn');
-    const ui = document.getElementById('ui');
-    
-    // Funkcja startowa
-    const startApp = async (e) => {
-        if(e && e.type === 'touchstart') e.preventDefault(); 
-        if(isRunning) return;
-        
-        isRunning = true;
-        
-        // UI Zmiany
-        startBtn.style.display = 'none'; // Ukryj przycisk
-        document.getElementById('loader-container').style.display = 'block'; // Pokaż pasek
-        document.getElementById('loader-text').style.display = 'block';
-        
-        initAudio();
-        initCanvas();
-        
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                pos => {
-                    userLat = pos.coords.latitude;
-                    userLon = pos.coords.longitude;
-                    document.getElementById('info').innerText = `GPS: OK (${userLat.toFixed(2)}, ${userLon.toFixed(2)})`;
-                    document.getElementById('info').style.color = "#0f0";
-                }, 
-                err => {
-                    console.warn("GPS zablokowany:", err);
-                    document.getElementById('info').innerText = "GPS: Zablokowany";
-                    document.getElementById('info').style.color = "orange";
-                }
-            );
-        }
-
-        await fetchTLE();
-        
-        // Ukryj cały ekran ładowania po zakończeniu
-        ui.style.opacity = 0;
-        setTimeout(() => {
-            ui.style.display = 'none';
-        }, 500);
-
-        loop();
-    };
-
-    startBtn.addEventListener('touchstart', startApp, {passive: false});
-    startBtn.addEventListener('click', startApp);
-
+/* Start */
+prepare(SAMPLE, SAMPLE.source);
+loadGraph();
+window.__graph = graph;
 </script>
 </body>
 </html>
